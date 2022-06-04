@@ -1,13 +1,14 @@
 var lookup_single = {7: 548, 8: 638, 9: 715, 10: 818, 11: 896, 12: 999, 13: 1089, 14: 1166, 15: 1270, 16: 1373}
 var lookup_triple = {6: 1553, 7: 1889, 8: 2146, 9: 2391, 10: 2559, 11: 2701, 12: 2830, 13: 3010, 14: 3300}
 gpio.pin_mode(25, gpio.DAC)
-var out_vol
-var amp
-var pha
-var set_amp
-var set_frc
-var set_psm
+var out_vol = 0
+var amp 
+var pha 
+var set_amp = 6
+var set_frc = 1
+var set_psm = 1
 
+import string
 
 def heater_power_w(cmd, idx, payload, payload_json)
 	print(payload_json)
@@ -187,7 +188,7 @@ def count_energy()
     end
 end
 
-def status_temp()
+def goeStatus_temp()
     # status = {'fwv', 'car', 'alw', 'amp', 'err', 'eto', 'psm', 'stp', 'tmp', 'trx', 'nrg', 'wh', 'cards'}
     var status = {}
     status['fwv'] = tasmota.cmd("status 2")['StatusFWR']['Version']
@@ -228,11 +229,12 @@ def status_temp()
     status['wh'] = real(energy.total*1000)
     status['cards'] = []
     print(status)
+    return status
     tasmota.resp_cmnd(status)
 end
-tasmota.add_cmd('go-eStatus', status_temp)
+tasmota.add_cmd('go-eStatus', goeStatus_temp)
 
-def set(payload_json)
+def goeSet(payload_json)
     var data = payload_json
     # data_needed = {'amp', 'frc', 'psm'}
     if data.contains('amp')
@@ -261,5 +263,24 @@ def set(payload_json)
         tasmota.add_cron('* * * * * *', count_energy, 1)
     else
         heater_power_off()
-    end     
+    end
+    tasmota.resp_cmnd_done()
+end
+tasmota.add_cmd('go-eWrite', goeSet)
+
+def filter_goe_status(cmd, idx, payload)
+    print (payload)
+    var status = goeStatus_temp()
+    if string.find(payload,'?filter=') == 0
+        print ('filter')
+        var filtered_data = {}
+        var filter = string.split((string.split(payload, '?filter=')[1]), ',')
+        for i : filter
+            print (i)
+            filtered_data.insert(i, status[i])
+        end
+        print (filtered_data)
+        tasmota.resp_cmnd(filtered_data)
+
+    end    
 end
