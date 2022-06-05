@@ -1,4 +1,4 @@
-from utils.request import getdata
-from utils.request import setdata
+from app.utils.request import getdata
+from app.utils.request import setdata
 
-from utils.env_vars import get_env
+from app.utils.env_vars import get_env
