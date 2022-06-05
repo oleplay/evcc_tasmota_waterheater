@@ -47,3 +47,4 @@ lookup_triple values correspond to 230V*3*Current
 ## TODO
 -  Add current sensing using current transformers
 -  Improve Documentation
+-  Add Pictures
