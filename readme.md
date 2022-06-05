@@ -40,9 +40,9 @@ The lookup dict in the Berry Script should be adjusted to your own values.
 
 {Current : DAC Voltage}
 
-lookup_single values correspond to 230V*Current
+lookup_single values correspond to 230VxCurrent
 
-lookup_triple values correspond to 230V*3*Current
+lookup_triple values correspond to 3x230VxCurrent
 
 ## TODO
 -  Add current sensing using current transformers
