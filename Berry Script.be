@@ -2,65 +2,16 @@ var lookup_single = {7: 548, 8: 638, 9: 715, 10: 818, 11: 896, 12: 999, 13: 1089
 var lookup_triple = {6: 1553, 7: 1889, 8: 2146, 9: 2391, 10: 2559, 11: 2701, 12: 2830, 13: 3010, 14: 3300}
 gpio.pin_mode(25, gpio.DAC)
 var out_vol = 0
-var amp 
-var pha 
-var set_amp = 6
-var set_frc = 1
-var set_psm = 1
+var status = {"fwv": "052.1", "car" : 3, "alw" : false, "frc" : 0, "amp" : 7, "err" : 0, "eto" : 0, "psm" : 1, "stp" : 0, "tmp" : 0.0, "tma" : 0.0, "trx" : 0, "nrg" : [], "wh" : 0.0, "cards" : [], "dac_out" : 0}
 
 import string
-
-def heater_power_w(cmd, idx, payload, payload_json)
-	print(payload_json)
-	var x = int(payload)
-	print(x)
-	gpio.pin_mode(25, gpio.DAC)
-    amp = int(x/(230*3))
-    if x < 1610
-        tasmota.resp_cmnd_error()
-    end
-    if amp < 6 || amp > 16
-        tasmota.resp_cmnd_error()
-    end
-    if x < 4140
-        out_vol = lookup_single[amp]
-    else
-        if amp > 14
-            amp = 14
-        end
-        out_vol = lookup_triple[amp]
-    end
-    heater_power(out_vol)
-    tasmota.resp_cmnd_str("Set to nearest value of " + amp*3*230 + "W")
-	print(out_vol)
-end
-tasmota.add_cmd('HeaterPowerW', heater_power_w)
-
-
-def heater_power_a(payload_json)
-	print(payload_json)
-	amp = int(payload_json['amp'])
-	pha = int(payload_json['psm']) 
-    gpio.pin_mode(25, gpio.DAC)
-    if amp < 6 || amp > 16
-        tasmota.resp_cmnd_error()
-    end
-    if pha == 1
-        if amp == 6
-            amp = 7
-        end
-        out_vol = lookup_single[amp]
-    else
-        if amp > 14
-            amp = 14
-        end
-        out_vol = lookup_triple[amp]
-    end
-
-    heater_power(out_vol)
-end
+import json
 
 def heater_power(out_vol)
+    if status["err"] == 13
+        print "Temp to high"
+        return
+    end
     tasmota.remove_timer(1)
     gpio.dac_voltage(25, out_vol)
     print(out_vol)
@@ -68,6 +19,8 @@ def heater_power(out_vol)
     tasmota.set_power(0, true)
     tasmota.delay(10)
     tasmota.set_power(2, true)
+    status["alw"] = true
+    status["car"] = 2
 end
 
 
@@ -81,18 +34,77 @@ def heater_power_off()
     tasmota.delay(10)
     tasmota.set_power(2, false)
     tasmota.set_timer(120000, fan_off, 1)
+    status["car"] = 4
+    status["alw"] = false
     tasmota.resp_cmnd_str('Heater power off')
 end
+
 
 def safety_power_off()
     if tasmota.cmd('status 10')['StatusSNS']['DS18B20']['Temperature'] >= 66
         print ('Temperature too high')
         heater_power_off()
+        status["err"] = 13
+        status["alw"] = false
+    end
+    if tasmota.cmd('status 10')['StatusSNS']['DS18B20']['Temperature'] <= 60
+        print ('Temperature low enough')
+        status["err"] = 0
+        # status["alw"] = true
     end
 end
 
-# Run cron every 20 seconds
 tasmota.add_cron('*/20 * * * * *', safety_power_off, 0)
+
+
+# def heater_power_w(cmd, idx, payload, payload_json)
+# 	print(payload_json)
+# 	var x = int(payload)
+# 	print(x)
+# 	gpio.pin_mode(25, gpio.DAC)
+#     amp = int(x/(230*3))
+#     if x < 1610
+#         tasmota.resp_cmnd_error()
+#     end
+#     if amp < 6 || amp > 16
+#         tasmota.resp_cmnd_error()
+#     end
+#     if x < 4140
+#         out_vol = lookup_single[amp]
+#     else
+#         if amp > 14
+#             amp = 14
+#         end
+#         out_vol = lookup_triple[amp]
+#     end
+#     heater_power(out_vol)
+#     tasmota.resp_cmnd_str("Set to nearest value of " + amp*3*230 + "W")
+# 	print(out_vol)
+# end
+# tasmota.add_cmd('HeaterPowerW', heater_power_w)
+
+def heater_power_a(payload_json)
+	print(payload_json)
+	var amp = status["amp"]
+	var pha = status["psm"]
+    gpio.pin_mode(25, gpio.DAC)
+    if amp < 6 || amp > 16
+        tasmota.resp_cmnd_error()
+    end
+    if pha == 1
+        if amp == 6
+            amp = 7
+        end
+        status["dac_out"] = lookup_single[amp]
+    else
+        if amp > 14
+            amp = 14
+        end
+        status["dac_out"] = lookup_triple[amp]
+    end
+    heater_power(status["dac_out"])
+end
+
 
 # def heater_wh(cmd, idx, payload, payload_json)
 # 	print(payload)
@@ -180,107 +192,125 @@ tasmota.add_cron('*/20 * * * * *', safety_power_off, 0)
 
 def count_energy()
     if tasmota.get_power() == [true,true,true]
-        if pha == 1
-            energy.total = energy.total + real(((230*lookup_single[amp])/3600000))
+        if status["psm"] == 1
+            status["wh"] = status["wh"] + ((230.0*real(lookup_single[status["amp"]]))/3600000.0)
         else
-            energy.total = energy.total + ((230*3*lookup_triple[amp]))/3600000
+            status["wh"] = status["wh"] + ((230.0*real(lookup_triple[status["amp"]]))/3600000.0)
         end
     end
+    status['eto'] = int(status["wh"])
+    # status['wh'] = real(energy.total*1000)
 end
 
 def goeStatus_temp()
-    # status = {'fwv', 'car', 'alw', 'amp', 'err', 'eto', 'psm', 'stp', 'tmp', 'trx', 'nrg', 'wh', 'cards'}
-    var status = {}
-    status['fwv'] = tasmota.cmd("status 2")['StatusFWR']['Version']
-    if tasmota.get_power() == [true,true,true]
-        print('heater on')
-        status['car'] = '2'
-    elif tasmota.get_power() == [true,true,true] && tasmota.cmd('status 10')['StatusSNS']['DS18B20']['Temperature'] >= 64
-        status['car'] = '4'
+    # status = {"fwv", "car", "alw", "amp", "err", "eto", "psm", "stp", "tmp", "trx", "nrg", "wh", "cards"}
+    # status["fwv"] = tasmota.cmd("status 2")["StatusFWR"]["Version"]
+    # if tasmota.get_power() == [true,true,true]
+    #     print("heater on")
+    #     status["car"] = 2
+    # elif tasmota.get_power() == [true,true,true] && tasmota.cmd("status 10")["StatusSNS"]["DS18B20"]["Temperature"] >= 64
+    #     status["car"] = 4
+    # else
+    #     status["car"] = 1
+    # end
+    # if status["car"] == 4
+    #     status["alw"] = true
+    # else
+    #     status["alw"] = false
+    # end
+    # status["amp"] = amp
+    # if tasmota.get_power() == [true,true,true] && tasmota.cmd("status 10")["StatusSNS"]["DS18B20"]["Temperature"] >= 64 
+    #     status["err"] = 13
+    # else
+    #     status["err"] = 0
+    # end
+    # status["eto"] = energy.total * 1000
+    # if out_vol > 1500
+    #     status ["psm"] = 2
+    # else
+    #     status ["psm"] = 1
+    # end
+    # status["stp"] = 0
+    status["tmp"] = tasmota.cmd("status 10")["StatusSNS"]["DS18B20"]["Temperature"]
+    # status["tmp"] = json.load(tasmota.read_sensors())["DS18B20"]["Temperature"]
+    status["tma"] = status["tmp"]
+    status["trx"] = 0
+    if (status["frc"] == 1 || status["err"] == 13) && (tasmota.get_power() == [false,true,false] || tasmota.get_power() == [false,false,false])
+        status["nrg"] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 99, 99, 99, 99]
     else
-        status['car'] = '1'
+        if status["psm"] == 2
+            status["nrg"] = [230, 230, 230, 0, status["amp"]*10, status["amp"]*10, status["amp"]*10, status["amp"]*230/100, status["amp"]*230/100, status["amp"]*230/100, 0, (status["amp"]*230*3), 99, 99, 99, 99]
+        else
+            status["nrg"] = [230, 0, 0, 0, status["amp"]*10, 0 , 0, status["amp"]*230/100, 0, 0, 0, (status["amp"]*230), 99, 99, 99, 99]
+        end
     end
-    if status['car'] == '4'
-        status['alw'] = true
-    else
-        status['alw'] = false
-    end
-    status['amp'] = amp
-    if tasmota.get_power() == [true,true,true] && tasmota.cmd('status 10')['StatusSNS']['DS18B20']['Temperature'] >= 64 
-        status['err'] = '13'
-    else
-        status['err'] = '0'
-    end
-    status['eto'] = energy.total * 1000
-    if out_vol > 1500
-        status ['psm'] = '2'
-    else
-        status ['psm'] = '1'
-    end
-    status['stp'] = 0
-    status['tmp'] = tasmota.cmd('status 10')['StatusSNS']['DS18B20']['Temperature']
-    status['tma'] = status['tmp']
-    status['trx'] = 0
-    if status['psm'] == 2
-        status['nrg'] = [230, 230, 230, 0, status['amp']*10, status['amp']*10, status['amp']*10, status['amp']*230/100, status['amp']*230/100, status['amp']*230/100, 0, (status['amp']*230*3)/10, 99, 99, 99, 99]
-    else
-        status['nrg'] = [230, 0, 0, 0, status['amp']*10, 0 , 0, status['amp']*230/100, 0, 0, 0, (status['amp']*230)/10, 99, 99, 99, 99]
-    end
-    status['wh'] = real(energy.total*1000)
-    status['cards'] = []
+    # status["wh"] = real(energy.total*1000)
+    # status["cards"] = []
     print(status)
     return status
     tasmota.resp_cmnd(status)
 end
-tasmota.add_cmd('go-eStatus', goeStatus_temp)
+tasmota.add_cmd('goeStatus', goeStatus_temp)
 
-def goeSet(payload_json)
-    var data = payload_json
-    # data_needed = {'amp', 'frc', 'psm'}
-    if data.contains('amp')
-        set_amp = data['amp']
+def goeSet(cmd, idx, payload, payload_json)
+    # print (payload, payload_json)
+    var data = {}
+    if string.find(payload,"?") == 0
+        var i = string.split(payload, "?")[1]
+        data[string.split(i, "=")[0]] = int(string.split(i, "=")[1])
+        # print (data)
+    else    
+        tasmota.resp_cmnd_error()
     end
-    if data.contains('frc')
-        set_frc = data['frc']
-        if set_frc == 1
+    
+
+    # data_needed = {"amp", "frc", "psm"}
+    if data.contains("amp")
+        status["amp"] = data["amp"]
+    end
+    if data.contains("frc")
+        status["frc"] = data["frc"]
+        if status["frc"] == 1
             heater_power_off()
+            status["alw"] = false
             tasmota.remove_cron(1)
         end
     end
-    if data.contains('psm')
-        set_psm = data['psm']
+    if data.contains("psm")
+        status["psm"] = data["psm"]
     end
-    if (set_amp < 7 && set_psm == 1)
-        set_amp = 7
-    elif (set_amp >14 && set_psm == 2)
-        set_amp = 14
+    if (status["amp"] < 7 && status["psm"] == 1)
+        status["amp"] = 7
+    elif (status["amp"] >14 && status["psm"] == 2)
+        status["amp"] = 14
     end
-    if set_psm != 2 && set_frc != 1
-        heater_power_a({'amp': set_amp, 'psm': 1})
-        tasmota.add_cron('* * * * * *', count_energy, 1)
-    elif set_psm == 2 && set_frc != 1
-        heater_power_a({'amp': set_amp, 'psm': 2})
-        tasmota.add_cron('* * * * * *', count_energy, 1)
+    if status["psm"] != 2 && status["frc"] != 1 && status["err"] != 13
+        heater_power_a({"amp": status["amp"], "psm": 1})
+        tasmota.add_cron("* * * * * *", count_energy, 1)
+    elif status["psm"] == 2 && status["frc"] != 1 && status["err"] != 13
+        heater_power_a({"amp": status["amp"], "psm": 2})
+        tasmota.add_cron("* * * * * *", count_energy, 1)
     else
         heater_power_off()
     end
-    tasmota.resp_cmnd_done()
+    tasmota.resp_cmnd(goeStatus_temp)
 end
-tasmota.add_cmd('go-eWrite', goeSet)
+tasmota.add_cmd('goeWrite', goeSet)
 
-def filter_goe_status(cmd, idx, payload)
-    print (payload)
-    var status = goeStatus_temp()
-    if string.find(payload,'?filter=') == 0
-        print ('filter')
-        var filtered_data = {}
-        var filter = string.split((string.split(payload, '?filter=')[1]), ',')
-        for i : filter
-            print (i)
-            filtered_data.insert(i, status[i])
-        end
-        print (filtered_data)
-        tasmota.resp_cmnd(filtered_data)
+# def filter_goe_status(cmd, idx, payload)
+#     print (payload)
+#     var status = goeStatus_temp()
+#     if string.find(payload,"?filter=") == 0
+#         print ("filter")
+#         var filtered_data = {}
+#         var filter = string.split((string.split(payload, "?filter=")[1]), ",")
+#         for i : filter
+#             print (i)
+#             filtered_data.insert(i, status[i])
+#         end
+#         print (filtered_data)
+#         tasmota.resp_cmnd(filtered_data)
 
-    end    
-end
+#     end    
+# end
+# tasmota.add_cmd('goeStatusfilter', filter_goe_status)
