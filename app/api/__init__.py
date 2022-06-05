@@ -1,2 +1,2 @@
-from app.api.read import router as read_router
-from app.api.set import router as set_router
+from .read import router as read_router
+from .set import router as set_router
