@@ -312,6 +312,8 @@ def goeSet(cmd, idx, payload, payload_json)
 end
 tasmota.add_cmd('goeWrite', goeSet)
 
+heater_power_off()
+contactor_off()
 # def filter_goe_status(cmd, idx, payload)
 #     print (payload)
 #     var status = goeStatus_temp()
