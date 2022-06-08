@@ -2,10 +2,11 @@ var lookup_single = {7: 548, 8: 638, 9: 715, 10: 818, 11: 896, 12: 999, 13: 1089
 var lookup_triple = {6: 1553, 7: 1889, 8: 2146, 9: 2391, 10: 2559, 11: 2701, 12: 2830, 13: 3010, 14: 3300}
 gpio.pin_mode(25, gpio.DAC)
 var out_vol = 0
-var status = {"fwv": "052.1", "car" : 3, "alw" : false, "frc" : 0, "amp" : 7, "err" : 0, "eto" : 0, "psm" : 1, "stp" : 0, "tmp" : 0.0, "tma" : 0.0, "trx" : 0, "nrg" : [], "wh" : 0.0, "cards" : [], "dac_out" : 0}
+var status = {"fwv": "052.1", "car" : 3, "alw" : false, "frc" : 1, "amp" : 16, "err" : 0, "eto" : 0, "psm" : 1, "stp" : 0, "tmp" : 0.0, "tma" : 0.0, "trx" : 0, "nrg" : [], "wh" : 0.0, "cards" : [], "dac_out" : 0}
 
 import string
 import json
+
 
 def heater_power(out_vol)
     if status["err"] == 13
@@ -13,6 +14,7 @@ def heater_power(out_vol)
         return
     end
     tasmota.remove_timer(1)
+    tasmota.remove_timer(2)
     gpio.dac_voltage(25, out_vol)
     print(out_vol)
     tasmota.set_power(1, true)
@@ -28,16 +30,33 @@ def fan_off()
     tasmota.set_power(1, false) 
 end
 
-def heater_power_off()
-    gpio.dac_voltage(25, 0)
+def contactor_off()
     tasmota.set_power(0, false)
-    tasmota.delay(10)
     tasmota.set_power(2, false)
+    print("Contactor off")
+end
+
+def heater_power_off()
+    if (tasmota.get_power() == [false,true,false] || tasmota.get_power() == [false,false,false])
+        return
+    end
+    gpio.dac_voltage(25, 0)
+    status["dac_out"] = 0
+    tasmota.set_timer(300000, contactor_off, 2)
+
+    # tasmota.set_power(0, false)
+    # tasmota.delay(10)
+    # tasmota.set_power(2, false)
     tasmota.set_timer(120000, fan_off, 1)
-    status["car"] = 4
+    if status["car"] != 1
+        status["car"] = 4
+    end
     status["alw"] = false
     tasmota.resp_cmnd_str('Heater power off')
 end
+
+heater_power_off()
+contactor_off()
 
 
 def safety_power_off()
@@ -46,10 +65,14 @@ def safety_power_off()
         heater_power_off()
         status["err"] = 13
         status["alw"] = false
+        status["car"] = 1
     end
     if tasmota.cmd('status 10')['StatusSNS']['DS18B20']['Temperature'] <= 60
         print ('Temperature low enough')
         status["err"] = 0
+        if status["car"] == 1
+            status["car"] = 3
+        end
         # status["alw"] = true
     end
 end
@@ -235,7 +258,7 @@ def goeStatus_temp()
     # status["tmp"] = json.load(tasmota.read_sensors())["DS18B20"]["Temperature"]
     status["tma"] = status["tmp"]
     status["trx"] = 0
-    if (status["frc"] == 1 || status["err"] == 13) && (tasmota.get_power() == [false,true,false] || tasmota.get_power() == [false,false,false])
+    if (status["frc"] == 1 || status["err"] == 13) && (tasmota.get_power() == [false,true,false] || tasmota.get_power() == [false,false,false] || status["car"] == 4)
         status["nrg"] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 99, 99, 99, 99]
     else
         if status["psm"] == 2
