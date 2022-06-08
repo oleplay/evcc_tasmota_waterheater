@@ -50,9 +50,6 @@ def heater_power_off()
     tasmota.resp_cmnd_str('Heater power off')
 end
 
-heater_power_off()
-contactor_off()
-
 
 def safety_power_off()
     if tasmota.cmd('status 10')['StatusSNS']['DS18B20']['Temperature'] >= 66
@@ -315,6 +312,8 @@ def goeSet(cmd, idx, payload, payload_json)
 end
 tasmota.add_cmd('goeWrite', goeSet)
 
+heater_power_off()
+contactor_off()
 # def filter_goe_status(cmd, idx, payload)
 #     print (payload)
 #     var status = goeStatus_temp()
