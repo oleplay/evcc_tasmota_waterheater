@@ -14,7 +14,6 @@ def heater_power(out_vol)
         return
     end
     tasmota.remove_timer(1)
-    tasmota.remove_timer(2)
     gpio.dac_voltage(25, out_vol)
     print(out_vol)
     tasmota.set_power(1, true)
@@ -26,12 +25,9 @@ def heater_power(out_vol)
 end
 
 
-def fan_off()
-    tasmota.set_power(1, false) 
-end
-
 def contactor_off()
     tasmota.set_power(0, false)
+    tasmota.set_power(1, false)
     tasmota.set_power(2, false)
     print("Contactor off")
 end
@@ -42,12 +38,11 @@ def heater_power_off()
     end
     gpio.dac_voltage(25, 0)
     status["dac_out"] = 0
-    tasmota.set_timer(300000, contactor_off, 2)
+    tasmota.set_timer(300000, contactor_off, 1)
 
     # tasmota.set_power(0, false)
     # tasmota.delay(10)
     # tasmota.set_power(2, false)
-    tasmota.set_timer(120000, fan_off, 1)
     if status["car"] != 1
         status["car"] = 4
     end
